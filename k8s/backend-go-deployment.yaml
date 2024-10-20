@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-go
+  namespace: fourinrow
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend-go
+  template:
+    metadata:
+      labels:
+        app: backend-go
+    spec:
+      containers:
+      - name: backend-go
+        image: fourinrow/backend-go:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: fourinrow-config
+              key: DATABASE_URL
+        - name: KAFKA_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: fourinrow-config
+              key: KAFKA_ENABLED
+        - name: KAFKA_BROKER
+          valueFrom:
+            configMapKeyRef:
+              name: fourinrow-config
+              key: KAFKA_BROKER
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-go-service
+  namespace: fourinrow
+spec:
+  selector:
+    app: backend-go
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  type: ClusterIP

@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: fourinrow-db
+    environment:
+      POSTGRES_DB: fourinrow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - fourinrow-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kafka (optional - comment out if not needed)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: fourinrow-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - fourinrow-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: fourinrow-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - fourinrow-network
+
+  # Node.js Backend (alternative - comment out backend-go and uncomment this)
+  # backend-nodejs:
+  #   build:
+  #     context: ./backend-nodejs
+  #     dockerfile: Dockerfile
+  #   container_name: fourinrow-backend-nodejs
+  #   environment:
+  #     PORT: 5000
+  #     NODE_ENV: production
+  #     DATABASE_URL: postgresql://postgres:postgres@postgres:5432/fourinrow
+  #     KAFKA_ENABLED: "true"
+  #     KAFKA_BROKER: kafka:9092
+  #     MATCHMAKING_TIMEOUT: 10000
+  #     RECONNECTION_TIMEOUT: 30000
+  #   ports:
+  #     - "5000:5000"
+  #   depends_on:
+  #     - postgres
+  #     - kafka
+  #   networks:
+  #     - fourinrow-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 30s
+
+  # Go Backend (default)
+  backend-go:
+    build:
+      context: ./backend-go
+      dockerfile: Dockerfile
+    container_name: fourinrow-backend-go
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/fourinrow
+      KAFKA_ENABLED: "true"
+      KAFKA_BROKER: kafka:9092
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - fourinrow-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Frontend with nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fourinrow-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend-go
+    networks:
+      - fourinrow-network
+    restart: unless-stopped
+
+networks:
+  fourinrow-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
